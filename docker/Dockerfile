@@ -15,7 +15,7 @@ RUN dotnet restore Jellyfin.Plugin.Pgsql.sln
 RUN dotnet publish Jellyfin.Plugin.Pgsql.sln -c Release --no-restore -o /app/publish
 
 # Final stage - Jellyfin with plugin
-FROM jellyfin/jellyfin:12.1
+FROM jellyfin/jellyfin:12.3@sha256:2038fe038ab3876a80f6e7b7e0aef6607b032c7dc0c9b3ad3296d0b2eba3bbb5
 
 # Install PostgreSQL 18 client tools for backup/restore functionality
 RUN apt-get update && \

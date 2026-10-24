@@ -83,6 +83,25 @@ public sealed class PgSqlDatabaseProvider : IJellyfinDatabaseProvider
     }
 
     /// <inheritdoc/>
+    public async Task RefreshStatistics(CancellationToken cancellationToken)
+    {
+        if (DbContextFactory is null)
+        {
+            return;
+        }
+
+        var context = await DbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await using (context.ConfigureAwait(false))
+        {
+            if (context.Database.IsNpgsql())
+            {
+                // Plain ANALYZE: refreshes planner statistics without reclaiming space, so it is cheap enough to run after every scan.
+                await context.Database.ExecuteSqlRawAsync("ANALYZE", cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Use C collation for consistent case-sensitive behavior matching SQLite BINARY
