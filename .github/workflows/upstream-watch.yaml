@@ -1,0 +1,63 @@
+name: '🔭 Watch upstreams'
+
+# Weekly: (1) open a PR merging JPVenson/Jellyfin.Pgsql master into this fork,
+# (2) open an issue when jellyfin/jellyfin has a newer release than the base
+# image in docker/Dockerfile. A new Jellyfin release usually also needs a
+# Postgres migration ported by hand; see docs in the nest repo
+# (docs/jellyfin-upgrades.md, "12.1 -> 12.3").
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge original fork into a sync branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "upstream-watch"
+          git config user.email "actions@users.noreply.github.com"
+          git remote add upstream https://github.com/JPVenson/Jellyfin.Pgsql.git
+          git fetch -q upstream master
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "Nothing new from JPVenson/Jellyfin.Pgsql"; exit 0
+          fi
+          BR="sync/jpvenson-$(date +%Y%m%d)"
+          git checkout -q -b "$BR"
+          if git merge --no-edit upstream/master; then
+            git push -q origin "$BR"
+            gh pr create --base master --head "$BR" \
+              --title "Sync JPVenson/Jellyfin.Pgsql master" \
+              --body "Automatic merge of the original fork. Conflicts, if any, are resolved here by hand." || true
+          else
+            git merge --abort
+            gh issue create --title "JPVenson/Jellyfin.Pgsql changes conflict with this fork" \
+              --body "The weekly sync could not merge upstream/master cleanly. Merge it by hand." || true
+          fi
+
+      - name: Check for a newer Jellyfin release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CUR=$(grep -oP '(?<=FROM jellyfin/jellyfin:)[0-9][^\s@]*' docker/Dockerfile | head -1)
+          LATEST=$(gh api repos/jellyfin/jellyfin/releases/latest --jq .tag_name | sed 's/^v//')
+          echo "base=$CUR latest=$LATEST"
+          if [ "$CUR" != "$LATEST" ] && [ "$(printf '%s\n%s\n' "$CUR" "$LATEST" | sort -V | tail -1)" = "$LATEST" ]; then
+            TITLE="Port to Jellyfin $LATEST"
+            if [ -z "$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number')" ]; then
+              gh issue create --title "$TITLE" \
+                --body "Base image is $CUR; Jellyfin $LATEST is out. Diff src/Jellyfin.Database and Jellyfin.Server/Migrations between the tags, add Postgres migrations, bump packages and the pinned base image, then rehearse."
+            fi
+          fi
